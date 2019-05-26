@@ -60,37 +60,26 @@ public class BalanceCheck {
 		this.timeStampEnd = timeStampEnd;
 	}
 
-	private void scanReversalPayments(final List<Transaction>transList,List<Transaction>candidate)throws TransactionException
-	{
-		// remove reverseIds//
-		candidate=tranList.stream().
-				filter(account->account!=null&&
-				(account.getTransactionType().equalsIgnoreCase("REVERSAL")&&
-						(account.getDebitAccount().equalsIgnoreCase(this.account)||
-								account.getCreditAccount().equalsIgnoreCase(this.account)
-								))))).collect(Collectors.toList());
-				if(candidate.size()>0)
-				log.info("size of reverse payment"+candidate.size());
-				
-		return filteredList;
-		}
-	public Double BalanceCoreLogic(final List<Transaction> tranList) throws TransactionException {
+	public Double BalanceCoreLogic(List<Transaction> tranList) throws TransactionException {
 		log.info("start date"+this.timeStampStart+"endDate"+this.timeStampEnd);
-		List<Transaction>candidate=new ArrayList<Transaction>();
+		List<Transaction>candidate;
 		
 		Double balance=0.0;
 		try{
-		scanReversalPayments(tranList,candidate);
+			candidate=scanReversalPayments(tranList);
 			//scan ids for same date range and remove from parent list//
 			if(null!=candidate && candidate.size()>0)
 			{
 				log.info("size of reverse payment"+candidate.size());
 				List<Transaction>traversal=tranList;
 				List<String>candidateIds=candidate.parallelStream().
-						map(e->e.getTransactionId()).collect(Collectors.toList());
+						map(e->e.getReversalTransactionId()).collect(Collectors.toList());
+				if(!candidateIds.isEmpty())
+				{
+					log.info("size of candidate Ids for reversal"+candidateIds.size());
+				}
 				
-				log.info("size of candidate Ids"+candidateIds.size());
-				
+				//assuming unique ids//
 				for(String id:candidateIds)
 				{
 					List<Transaction>removeCandidate=traversal.stream().
@@ -113,6 +102,21 @@ public class BalanceCheck {
 				log.info("size of filtered List post reversal"+tranList.size());
 			}
 			
+			List<Transaction>totalTransaction = tranList.stream().
+					filter(account->account.getCreditAccount().
+							equalsIgnoreCase(this.account) ||account.getDebitAccount().
+							equalsIgnoreCase(this.account) && account.getTransactionType().
+							equalsIgnoreCase("PAYMENT") &&
+							account.getTimeStamp().
+							isAfter(this.timeStampStart)&& 
+							account.getTimeStamp().
+							isBefore(this.timeStampEnd)).collect(Collectors.toList());
+			
+			if(!totalTransaction.isEmpty())
+			{
+				log.info("size of total valid Transaction"+totalTransaction.size());
+			}
+		
 				Double creditSum=tranList.stream().filter(
 						account->account.getCreditAccount().
 						equalsIgnoreCase(this.account)&&account.getTransactionType().
@@ -128,6 +132,7 @@ public class BalanceCheck {
 						mapToDouble(Transaction::getAmount).sum();
 				
 				balance=creditSum-debitSum;
+				log.info("total balance"+balance);
 		}catch(Exception ex){
 			log.log(Level.SEVERE,"TransactionException in BalanceCheck class",ex);
 			throw new TransactionException("error in BalanceCheck core logic reason"+ex.getMessage());
@@ -135,7 +140,20 @@ public class BalanceCheck {
 		return balance;
 
 	}
-
+	public List<Transaction>scanReversalPayments(List<Transaction>transList)throws TransactionException
+	{
+		// remove reverseIds//
+		List<Transaction>candidate=transList.stream().
+				filter(account->account!=null&&account.getTransactionType().equalsIgnoreCase("REVERSAL")).collect(Collectors.toList());
+				if(candidate.size()>0)
+				{
+				log.info("size of reverse payment"+candidate.size());
+				}
+				
+				return candidate;
+				
+				
+		}
 	public List<Transaction> mapToModel() throws TransactionException {
 		log.info("Mapping csv file to model");
 		InputStream is = null;
